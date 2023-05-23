@@ -12,8 +12,8 @@
     text-align: center;
 }
 .participant div:first-child {
-    width: 240px;
-    height: 180px;
+    width: 480px;
+    height: 360px;
     background-color: #ccc;
     border: 1px solid black;
 }

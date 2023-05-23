@@ -5,6 +5,10 @@ const count = document.getElementById('count');
 let connected = false;
 let room;
 
+// peer connection
+var pc = null;
+var dc = null, dcInterval = null;
+
 const addLocalVideo = async () => {
   const track = await Twilio.Video.createLocalVideoTrack();
   const video = document.getElementById('local').firstElementChild;
@@ -20,21 +24,21 @@ const connectButtonHandler = async (event) => {
       return;
     }
     button.disabled = true;
-    button.innerHTML = 'Connecting...';
+    button.innerHTML = 'Conectando...';
     try {
       await connect(username);
-      button.innerHTML = 'Leave call';
+      button.innerHTML = 'Sair';
       button.disabled = false;
     }
     catch {
-      alert('Connection failed. Is the backend running?');
-      button.innerHTML = 'Join call';
-      button.disabled = false;    
+      alert('Falha na conexão. Seria o backend?');
+      button.innerHTML = 'Entrar';
+      button.disabled = false;
     }
   }
   else {
     disconnect();
-    button.innerHTML = 'Join call';
+    button.innerHTML = 'Entrar';
     connected = false;
   }
 };
@@ -42,8 +46,8 @@ const connectButtonHandler = async (event) => {
 const connect = async (username) => {
   const response = await fetch('/get_token', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({'username': username}),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 'username': username }),
   });
   const data = await response.json();
   room = await Twilio.Video.connect(data.token);
@@ -56,12 +60,57 @@ const connect = async (username) => {
 
 const updateParticipantCount = () => {
   if (!connected) {
-    count.innerHTML = 'Disconnected.';
+    count.innerHTML = 'Desconectado';
   }
   else {
-    count.innerHTML = (room.participants.size + 1) + ' participants online.';
+    count.innerHTML = (room.participants.size + 1) + ' participantes online.';
   }
 };
+
+const negotiate = () => {
+  return pc.createOffer().then(function (offer) {
+    return pc.setLocalDescription(offer);
+  }).then(function () {
+    return new Promise(function (resolve) {
+      if (pc.iceGatheringState === 'complete') {
+        resolve();
+      } else {
+        function checkState() {
+          if (pc.iceGatheringState === 'complete') {
+            pc.removeEventListener('icegatheringstatechange', checkState);
+            resolve();
+          }
+        }
+
+        pc.addEventListener('icegatheringstatechange', checkState);
+      }
+    });
+  }).then(function () {
+    var offer = pc.localDescription;
+    console.log(offer);
+    return fetch('http://localhost:2700/offer', {
+      body: JSON.stringify({
+        "sdp": offer.sdp,
+        "type": offer.type,
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      method: 'POST',
+      mode: 'no-cors'
+    });
+  }).then(function (response) {
+    console.log('>>>>>>>> response');
+    console.log(response.json());
+    return response.json();
+  }).then(function (answer) {
+    console.log('>>>>>>>> pc.setRemoteDescription(answer)');
+    console.log(pc.setRemoteDescription(answer));
+    return pc.setRemoteDescription(answer);
+  }).catch(function (e) {
+    console.log(e);
+  });
+}
 
 const participantConnected = (participant) => {
   const participantDiv = document.createElement('div');
@@ -76,6 +125,64 @@ const participantConnected = (participant) => {
   participantDiv.appendChild(labelDiv);
 
   container.appendChild(participantDiv);
+
+  console.log('>>>>>>>> Participante conectado');
+
+  var config = {
+    sdpSemantics: 'unified-plan'
+  };
+  pc = new RTCPeerConnection(config);
+  dc = pc.createDataChannel('result');
+
+  console.log('>>>>>>>> Canal criado');
+
+  dc.onopen = async () => {
+    console.log('>>>>>>>> Opened data channel');
+  };
+  dc.onclose = async () => {
+    clearInterval(dcInterval);
+    console.log('>>>>>>>> Closed data channel');
+  };
+  dc.onmessage = async (messageEvent) => {
+    console.log('>>>>>>>> Data channel on message');
+    if (!messageEvent.data) {
+      return;
+    }
+
+    let voskResult;
+    try {
+      voskResult = JSON.parse(messageEvent.data);
+    } catch (error) {
+      console.error(`ERROR: ${error.message}`);
+      return;
+    }
+    if ((voskResult.text?.length || 0) > 0) {
+      // performRecvText(voskResult.text);
+    } else if ((voskResult.partial?.length || 0) > 0) {
+      // performRecvPartial(voskResult.partial);
+    }
+  };
+  pc.oniceconnectionstatechange = async () => {
+    console.log('>>>>>>>> Peer connection disconnected');
+    if (pc.iceConnectionState == 'disconnected') {
+      console.log('>>>>>>>> Disconnected');
+    }
+  }
+
+  var constraints = {
+    audio: true,
+    video: false,
+  };
+
+  navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
+    stream.getTracks().forEach(function (track) {
+      console.log(`>>>>>>>>>>>> Stream (${participant.identity}) >>>>>>>>>>>>>>`);
+      pc.addTrack(track, stream);
+    });
+    return negotiate();
+  }, function (err) {
+    console.log('>>>>>>>> Could not acquire media: ' + err);
+  });
 
   participant.tracks.forEach(publication => {
     if (publication.isSubscribed) {
@@ -103,9 +210,9 @@ const trackUnsubscribed = (track) => {
 const disconnect = () => {
   room.disconnect();
   while (container.lastChild.id != 'local') {
-      container.removeChild(container.lastChild);
+    container.removeChild(container.lastChild);
   }
-  button.innerHTML = 'Join call';
+  button.innerHTML = 'Entrar';
   connected = false;
   updateParticipantCount();
 };
