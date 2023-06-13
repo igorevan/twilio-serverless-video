@@ -24,21 +24,21 @@ const connectButtonHandler = async (event) => {
       return;
     }
     button.disabled = true;
-    button.innerHTML = 'Conectando...';
+    button.innerHTML = 'Connecting...';
     try {
       await connect(username);
-      button.innerHTML = 'Sair';
+      button.innerHTML = 'Leave call';
       button.disabled = false;
     }
     catch {
-      alert('Falha na conexão. Seria o backend?');
-      button.innerHTML = 'Entrar';
+      alert('Connection failed. Is the backend running?');
+      button.innerHTML = 'Join call';
       button.disabled = false;
     }
   }
   else {
     disconnect();
-    button.innerHTML = 'Entrar';
+    button.innerHTML = 'Join call';
     connected = false;
   }
 };
@@ -60,14 +60,16 @@ const connect = async (username) => {
 
 const updateParticipantCount = () => {
   if (!connected) {
-    count.innerHTML = 'Desconectado';
+    count.innerHTML = 'Disconnected.';
   }
   else {
-    count.innerHTML = (room.participants.size + 1) + ' participantes online.';
+    count.innerHTML = (room.participants.size + 1) + ' participants online.';
   }
 };
 
-const negotiate = () => {
+function negotiate(participant) {
+  console.log('>>> Entrou no negotiate()');
+
   return pc.createOffer().then(function (offer) {
     return pc.setLocalDescription(offer);
   }).then(function () {
@@ -87,32 +89,90 @@ const negotiate = () => {
     });
   }).then(function () {
     var offer = pc.localDescription;
-    console.log(offer);
-    return fetch('http://localhost:2700/offer', {
+    // return fetch('http://localhost:2700/offer', {
+    return fetch('https://0a09-2804-14d-bac1-46c4-9693-c8b8-83ed-55b9.ngrok-free.app/offer', {
       body: JSON.stringify({
-        "sdp": offer.sdp,
-        "type": offer.type,
+        sdp: offer.sdp,
+        type: offer.type,
+        participant: participant,
       }),
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json'
       },
-      method: 'POST',
-      mode: 'no-cors'
+      method: 'POST'
     });
   }).then(function (response) {
-    console.log('>>>>>>>> response');
-    console.log(response.json());
     return response.json();
   }).then(function (answer) {
-    console.log('>>>>>>>> pc.setRemoteDescription(answer)');
-    console.log(pc.setRemoteDescription(answer));
     return pc.setRemoteDescription(answer);
   }).catch(function (e) {
     console.log(e);
   });
 }
 
+function performRecvText(str) {
+  htmlStr = document.getElementById('text').innerHTML;
+  htmlStr += '<div>' + str + '</div>\n';
+  document.getElementById('text').innerHTML = htmlStr;
+  document.getElementById('partial').innerText = ' > ';
+}
+
+function performRecvPartial(str) {
+  document.getElementById('partial').innerText = ' > ' + str;
+}
+
 const participantConnected = (participant) => {
+  console.log(`>>> Participante ${participant.identity} conectou`);
+
+  pc = new RTCPeerConnection({ sdpSemantics: 'unified-plan' });
+
+  dc = pc.createDataChannel('result');
+  dc.onclose = function () {
+    clearInterval(dcInterval);
+    console.log('>>> Canal fechado');
+  };
+  dc.onopen = function () {
+    console.log('>>> Canal aberto');
+  };
+  dc.onmessage = function (messageEvent) {
+    console.log('>>> Canal recebendo mensagem');
+    // console.log(JSON.parse(messageEvent.data));
+
+    if (!messageEvent.data) {
+      return;
+    }
+
+    let voskResult;
+    try {
+      voskResult = JSON.parse(messageEvent.data);
+    } catch (error) {
+      console.error(`ERROR: ${error.message}`);
+      return;
+    }
+    if ((voskResult.text?.length || 0) > 0) {
+      performRecvText(voskResult.text);
+    } else if ((voskResult.partial?.length || 0) > 0) {
+      performRecvPartial(voskResult.partial);
+    }
+  };
+
+  pc.oniceconnectionstatechange = function () {
+    if (pc.iceConnectionState == 'disconnected') {
+      console.log('>>> Disconnected <<<');
+      btn_show_start();
+    }
+  }
+
+  navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(function (stream) {
+    stream.getTracks().forEach(function (track) {
+      console.log('>>> Enviando stream de áudio');
+      pc.addTrack(track, stream);
+    });
+    return negotiate(participant.identity);
+  }, function (err) {
+    console.log('>>> Não foi possível adquirir a mídia: ' + err);
+  });
+
   const participantDiv = document.createElement('div');
   participantDiv.setAttribute('id', participant.sid);
   participantDiv.setAttribute('class', 'participant');
@@ -126,64 +186,6 @@ const participantConnected = (participant) => {
 
   container.appendChild(participantDiv);
 
-  console.log('>>>>>>>> Participante conectado');
-
-  var config = {
-    sdpSemantics: 'unified-plan'
-  };
-  pc = new RTCPeerConnection(config);
-  dc = pc.createDataChannel('result');
-
-  console.log('>>>>>>>> Canal criado');
-
-  dc.onopen = async () => {
-    console.log('>>>>>>>> Opened data channel');
-  };
-  dc.onclose = async () => {
-    clearInterval(dcInterval);
-    console.log('>>>>>>>> Closed data channel');
-  };
-  dc.onmessage = async (messageEvent) => {
-    console.log('>>>>>>>> Data channel on message');
-    if (!messageEvent.data) {
-      return;
-    }
-
-    let voskResult;
-    try {
-      voskResult = JSON.parse(messageEvent.data);
-    } catch (error) {
-      console.error(`ERROR: ${error.message}`);
-      return;
-    }
-    if ((voskResult.text?.length || 0) > 0) {
-      // performRecvText(voskResult.text);
-    } else if ((voskResult.partial?.length || 0) > 0) {
-      // performRecvPartial(voskResult.partial);
-    }
-  };
-  pc.oniceconnectionstatechange = async () => {
-    console.log('>>>>>>>> Peer connection disconnected');
-    if (pc.iceConnectionState == 'disconnected') {
-      console.log('>>>>>>>> Disconnected');
-    }
-  }
-
-  var constraints = {
-    audio: true,
-    video: false,
-  };
-
-  navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
-    stream.getTracks().forEach(function (track) {
-      console.log(`>>>>>>>>>>>> Stream (${participant.identity}) >>>>>>>>>>>>>>`);
-      pc.addTrack(track, stream);
-    });
-    return negotiate();
-  }, function (err) {
-    console.log('>>>>>>>> Could not acquire media: ' + err);
-  });
-
   participant.tracks.forEach(publication => {
     if (publication.isSubscribed) {
       trackSubscribed(tracksDiv, publication.track);
@@ -195,6 +197,30 @@ const participantConnected = (participant) => {
 };
 
 const participantDisconnected = (participant) => {
+  // close data channel
+  if (dc) {
+    dc.close();
+  }
+
+  // close transceivers
+  if (pc.getTransceivers) {
+    pc.getTransceivers().forEach(function (transceiver) {
+      if (transceiver.stop) {
+        transceiver.stop();
+      }
+    });
+  }
+
+  // close local audio / video
+  pc.getSenders().forEach(function (sender) {
+    sender.track.stop();
+  });
+
+  // close peer connection
+  setTimeout(function () {
+    pc.close();
+  }, 500);
+
   document.getElementById(participant.sid).remove();
   updateParticipantCount();
 };
@@ -212,11 +238,10 @@ const disconnect = () => {
   while (container.lastChild.id != 'local') {
     container.removeChild(container.lastChild);
   }
-  button.innerHTML = 'Entrar';
+  button.innerHTML = 'Join call';
   connected = false;
   updateParticipantCount();
 };
 
 addLocalVideo();
 button.addEventListener('click', connectButtonHandler);
-
