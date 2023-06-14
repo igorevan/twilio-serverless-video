@@ -94,9 +94,7 @@ function negotiate() {
     });
   }).then(function () {
     var offer = pc.localDescription;
-    // return fetch('http://localhost:2700/offer', {
-    // return fetch('https://e476-2804-14d-bac1-46c4-3f6d-1538-ed02-f7a2.ngrok-free.app/offer', {
-    return fetch('http://172.177.132.220:2700/offer', {
+    return fetch('http://localhost:2700/offer', {
       body: JSON.stringify({
         sdp: offer.sdp,
         type: offer.type,
