@@ -44,6 +44,8 @@ const connectButtonHandler = async (event) => {
 };
 
 const connect = async (username) => {
+  console.log(`>>> Usuário local: ${username}`);
+
   const response = await fetch('/get_token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -67,7 +69,7 @@ const updateParticipantCount = () => {
   }
 };
 
-function negotiate(participant) {
+function negotiate() {
   console.log('>>> Entrou no negotiate()');
 
   return pc.createOffer().then(function (offer) {
@@ -90,11 +92,10 @@ function negotiate(participant) {
   }).then(function () {
     var offer = pc.localDescription;
     // return fetch('http://localhost:2700/offer', {
-    return fetch('https://0a09-2804-14d-bac1-46c4-9693-c8b8-83ed-55b9.ngrok-free.app/offer', {
+    return fetch('https://e476-2804-14d-bac1-46c4-3f6d-1538-ed02-f7a2.ngrok-free.app', {
       body: JSON.stringify({
         sdp: offer.sdp,
         type: offer.type,
-        participant: participant,
       }),
       headers: {
         'Content-Type': 'application/json'
@@ -122,7 +123,9 @@ function performRecvPartial(str) {
 }
 
 const participantConnected = (participant) => {
-  console.log(`>>> Participante ${participant.identity} conectou`);
+  console.log(`>>> Participante ${participant.identity} entrou na sala`);
+
+  const user = usernameInput.value;
 
   pc = new RTCPeerConnection({ sdpSemantics: 'unified-plan' });
 
@@ -133,6 +136,7 @@ const participantConnected = (participant) => {
   };
   dc.onopen = function () {
     console.log('>>> Canal aberto');
+    dc.send(user);
   };
   dc.onmessage = function (messageEvent) {
     console.log('>>> Canal recebendo mensagem');
@@ -159,7 +163,6 @@ const participantConnected = (participant) => {
   pc.oniceconnectionstatechange = function () {
     if (pc.iceConnectionState == 'disconnected') {
       console.log('>>> Disconnected <<<');
-      btn_show_start();
     }
   }
 
@@ -168,7 +171,7 @@ const participantConnected = (participant) => {
       console.log('>>> Enviando stream de áudio');
       pc.addTrack(track, stream);
     });
-    return negotiate(participant.identity);
+    return negotiate();
   }, function (err) {
     console.log('>>> Não foi possível adquirir a mídia: ' + err);
   });
