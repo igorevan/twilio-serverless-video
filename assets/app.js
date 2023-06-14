@@ -54,6 +54,9 @@ const connect = async (username) => {
   const data = await response.json();
   room = await Twilio.Video.connect(data.token);
   room.participants.forEach(participantConnected);
+
+  console.log(`>>> SID da vídeo chamada: ${room.sid}`);
+
   room.on('participantConnected', participantConnected);
   room.on('participantDisconnected', participantDisconnected);
   connected = true;
@@ -92,7 +95,8 @@ function negotiate() {
   }).then(function () {
     var offer = pc.localDescription;
     // return fetch('http://localhost:2700/offer', {
-    return fetch('https://e476-2804-14d-bac1-46c4-3f6d-1538-ed02-f7a2.ngrok-free.app', {
+    // return fetch('https://e476-2804-14d-bac1-46c4-3f6d-1538-ed02-f7a2.ngrok-free.app/offer', {
+    return fetch('http://172.177.132.220:2700/offer', {
       body: JSON.stringify({
         sdp: offer.sdp,
         type: offer.type,
@@ -136,7 +140,7 @@ const participantConnected = (participant) => {
   };
   dc.onopen = function () {
     console.log('>>> Canal aberto');
-    dc.send(user);
+    dc.send(`{ "user": "${user}", "room_sid": "${room.sid}" }`);
   };
   dc.onmessage = function (messageEvent) {
     console.log('>>> Canal recebendo mensagem');
